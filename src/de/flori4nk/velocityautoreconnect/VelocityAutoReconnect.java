@@ -27,6 +27,8 @@ import com.velocitypowered.api.plugin.annotation.DataDirectory;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import eu.kennytv.maintenance.api.MaintenanceProvider;
+import eu.kennytv.maintenance.api.proxy.MaintenanceProxy;
 import de.flori4nk.velocityautoreconnect.listeners.ConnectionListener;
 import de.flori4nk.velocityautoreconnect.listeners.KickListener;
 import de.flori4nk.velocityautoreconnect.misc.Utility;
@@ -43,6 +45,7 @@ import java.util.logging.Logger;
 @Plugin(id = "velocityautoreconnect", name = "VelocityAutoReconnect", version = "1.2.4", authors = {"Flori4nK"})
 public class VelocityAutoReconnect {
 
+    private static VelocityAutoReconnect instance;
     private static ProxyServer proxyServer;
     private static Logger logger;
     private static RegisteredServer limboServer;
@@ -53,10 +56,15 @@ public class VelocityAutoReconnect {
 
     @Inject
     public VelocityAutoReconnect(ProxyServer server, Logger logger, @DataDirectory Path dataDirectory) {
+        VelocityAutoReconnect.instance = this;
         VelocityAutoReconnect.proxyServer = server;
         VelocityAutoReconnect.logger = logger;
         VelocityAutoReconnect.configurationManager = new ConfigurationManager(new File(dataDirectory.toFile(), "velocityautoreconnect.conf"));
         VelocityAutoReconnect.playerManager = new PlayerManager();
+    }
+
+    public static VelocityAutoReconnect getInstance() {
+        return instance;
     }
 
     public static RegisteredServer getLimboServer() {
@@ -114,6 +122,22 @@ public class VelocityAutoReconnect {
 
             // If enabled, check if a server responds to pings before connecting
             try {
+                // Проверяем режим техработ
+                MaintenanceProxy maintenanceAPI = (MaintenanceProxy) MaintenanceProvider.get();
+                if (maintenanceAPI.isMaintenance()) {
+                    return; // Если включен глобальный режим техработ, пропускаем
+                }
+                
+                // Проверяем режим техработ на целевом сервере
+                if (maintenanceAPI.isMaintenance(maintenanceAPI.getServer(previousServer.getServerInfo().getName()))) {
+                    // Если на предыдущем сервере техработы, пробуем directconnect сервер
+                    previousServer = directConnectServer;
+                    if (maintenanceAPI.isMaintenance(maintenanceAPI.getServer(previousServer.getServerInfo().getName()))) {
+                        return; // Если и там техработы, пропускаем
+                    }
+                }
+
+                // Проверяем пинг если включено
                 if (configurationManager.getBooleanProperty("pingcheck")) {
                     try {
                         previousServer.ping().join();
@@ -122,6 +146,7 @@ public class VelocityAutoReconnect {
                         return;
                     }
                 }
+                
                 Utility.logInformational(String.format("Connecting %s to %s.", nextPlayer.getUsername(), previousServer.getServerInfo().getName()));
                 nextPlayer.createConnectionRequest(previousServer).connect();
             } catch (CompletionException exception) {

@@ -59,4 +59,8 @@ public class Utility {
         }
     }
 
+    // Format a message with color codes
+    public static Component formatMessage(String message) {
+        return Component.text(message.replace("&", "§"));
+    }
 }
